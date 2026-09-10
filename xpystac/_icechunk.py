@@ -74,21 +74,29 @@ def read_icechunk(asset: pystac.Asset) -> xr.Dataset:
         raise ValueError("Only supports one storage:ref per asset")
 
     storage_scheme = storage_schemes.get(storage_refs[0])
-    if not storage_scheme["type"] == "aws-s3":
-        raise ValueError("Only S3 buckets are currently supported")
+    scheme_type = storage_scheme["type"]
 
-    bucket = storage_scheme["bucket"]
-    region = storage_scheme["region"]
-    anonymous = storage_scheme.get("anonymous", False)
-    prefix = asset.href.split(f"{bucket}/")[1]
+    if scheme_type == "aws-s3":
+        bucket = storage_scheme["bucket"]
+        region = storage_scheme["region"]
+        anonymous = storage_scheme.get("anonymous", False)
+        prefix = asset.href.split(f"{bucket}/")[1]
 
-    storage = icechunk.s3_storage(
-        bucket=bucket,
-        prefix=prefix,
-        region=region,
-        anonymous=anonymous,
-        from_env=not anonymous,
-    )
+        storage = icechunk.s3_storage(
+            bucket=bucket,
+            prefix=prefix,
+            region=region,
+            anonymous=anonymous,
+            from_env=not anonymous,
+        )
+
+    elif scheme_type == "local":
+        storage = icechunk.local_filesystem_storage(
+            path=asset.href
+        )
+
+    else:
+        raise ValueError(f"Only S3 buckets and local storage are currently supported")
 
     if "virtual" in asset.roles:
         config, virtual_credentials = construct_virtual_containers_config(owner, asset)
