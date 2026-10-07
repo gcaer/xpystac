@@ -1,13 +1,19 @@
 import pystac_client
 import pytest
+import xarray as xr
 
 from tests.utils import STAC_URLS, requires_icechunk, requires_planetary_computer
-from xpystac.core import to_xarray
+from xpystac.core import to_xarray, to_xarray_datatree
 
 
 def test_to_xarray_with_cog_asset(simple_cog):
     ds = to_xarray(simple_cog)
     assert ds
+
+
+def test_to_xarray_with_cog_asset_datatree(simple_cog):
+    tree = to_xarray_datatree(simple_cog)
+    assert isinstance(tree, xr.DataTree)
 
 
 @requires_planetary_computer
@@ -33,6 +39,40 @@ def test_to_xarray_with_pystac_client_search_with_patch_url():
 def test_to_xarray_with_bad_type():
     with pytest.raises(TypeError):
         to_xarray("foo")
+
+
+def test_to_xarray_datatree_with_bad_type():
+    with pytest.raises(TypeError):
+        to_xarray_datatree("foo")
+
+
+def test_to_xarray_item_with_no_openable_asset_raises(simple_item):
+    """An Item whose assets are not Zarr/kerchunk (e.g. only COG + thumbnail,
+    like NAIP) must raise a clear ValueError instead of silently returning
+    None and exploding inside xarray's backend later (gh-68)."""
+    with pytest.raises(ValueError, match="no Zarr or kerchunk asset"):
+        to_xarray(simple_item)
+
+
+def test_to_xarray_item_with_cog_only_error_points_at_stackstac(simple_item):
+    """COG-only items should point users at stackstac / odc-stac in the
+    error message (gh-68)."""
+    with pytest.raises(ValueError, match="stackstac or odc-stac"):
+        to_xarray(simple_item)
+
+
+@requires_icechunk
+def test_to_xarray_item_with_one_dataset_asset_works(virtual_icechunk_item):
+    to_xarray(virtual_icechunk_item)
+
+
+@requires_icechunk
+def test_to_xarray_item_with_multiple_dataset_assets_raises(virtual_icechunk_item):
+    item = virtual_icechunk_item
+    assets = item.get_assets(role="latest-version")
+    item.assets["copy"] = next(iter(assets.values()))
+    with pytest.raises(ValueError, match="xpystac can only open one asset"):
+        to_xarray(item)
 
 
 @requires_planetary_computer
@@ -73,6 +113,21 @@ def test_to_xarray_zarr():
     for da in ds.data_vars.values():
         if da.ndim >= 2:
             assert hasattr(da.data, "dask"), da.name
+
+
+@requires_planetary_computer
+def test_to_xarray_zarr_datatree():
+    import planetary_computer as pc
+
+    catalog = pystac_client.Client.open(
+        STAC_URLS["PLANETARY-COMPUTER"], modifier=pc.sign_inplace
+    )
+    collection = catalog.get_collection("daymet-daily-hi")
+    assert collection is not None
+    zarr_asset = collection.assets["zarr-abfs"]
+
+    tree = to_xarray_datatree(zarr_asset, chunks={})
+    assert isinstance(tree, xr.DataTree)
 
 
 @requires_planetary_computer
