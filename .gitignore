@@ -8,3 +8,5 @@ dist
 .ruff_cache
 *.egg-info/
 .venv
+build/
+**/.ipynb_checkpoints/
