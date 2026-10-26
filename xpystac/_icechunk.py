@@ -52,7 +52,14 @@ def construct_virtual_containers_config(
 
     elif data_scheme_type == "local":
         config = icechunk.RepositoryConfig.default()
-        credentials = None
+        config.set_virtual_chunk_container(
+            icechunk.VirtualChunkContainer(
+                data_href,
+                icechunk.local_filesystem_store(unquote(urlparse(data_href).path)),
+            )
+        )
+        # icechunk>=2 expects an explicit no-auth sentinel instead of None
+        credentials = getattr(icechunk.credentials, "LocalFileSystemAccess", None)
     else:
         raise ValueError("Only S3 buckets and local storage are currently supported")
 
@@ -100,7 +107,9 @@ def read_icechunk(asset: pystac.Asset) -> xr.Dataset:
         )
 
     elif scheme_type == "local":
-        path = unquote(urlparse(asset.href).path)
+        # Resolve relative hrefs against the owner's self href
+        href = asset.get_absolute_href() or asset.href
+        path = unquote(urlparse(href).path)
         storage = icechunk.local_filesystem_storage(path=path)
 
     else:
